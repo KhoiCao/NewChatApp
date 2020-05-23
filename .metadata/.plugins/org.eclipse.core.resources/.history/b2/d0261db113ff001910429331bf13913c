@@ -1,0 +1,214 @@
+package chatBox;
+
+import java.awt.Font;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.WindowEvent;
+import java.awt.event.WindowListener;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+import javax.swing.JButton;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
+
+import chatBox.FileTransferHelper.IFileTransferMessage;
+import message.Message;
+
+public class ChatBoxGUI extends JFrame {
+
+	private int windowWidth = 450, windowHeight = 450;
+	
+	private JTextField userChat;
+	private JTextArea chatHistory;
+	private JButton btnSendFile;
+	
+	private String friendName;
+	public String getFriendName() { return friendName; }
+	
+	private String myUsername;
+	
+	private ObjectOutputStream output;
+	
+	private FileTransferHelper fileTransferHelper;
+	
+	public ChatBoxGUI(IChatBoxClose iClose, String myUsername, String friendName, String friendIP, ObjectOutputStream output) {	
+		this.myUsername = myUsername;
+		this.friendName = friendName;
+		this.output = output;
+		try {
+			this.fileTransferHelper = new FileTransferHelper(friendIP);
+		} catch (IOException e) {
+			e.printStackTrace();
+		} 
+		
+		System.out.println("\nYou are now connected with " + friendName + " at " + friendIP);
+		
+		SwingUtilities.invokeLater(
+			new Runnable() {			
+				@Override
+				public void run() {
+					initialize(iClose);				
+				}				
+			}
+		);	
+		
+		startReceivingFile();
+		
+	}
+	
+	private void initialize(final IChatBoxClose iClose) {
+		setTitle(friendName);
+		setLocationRelativeTo(null);
+		setBounds(100, 100, windowWidth, windowHeight);
+		setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+		getContentPane().setLayout(null);
+		setVisible(true);
+		addWindowListener(
+			new WindowListener() {				
+				@Override
+				public void windowClosing(WindowEvent e) {}
+				
+				@Override
+				public void windowClosed(WindowEvent e) {
+					iClose.onChatBoxClose(friendName);
+				}
+
+				@Override
+				public void windowActivated(WindowEvent e) {}
+
+				@Override
+				public void windowDeactivated(WindowEvent e) {}
+
+				@Override
+				public void windowDeiconified(WindowEvent e) {}
+
+				@Override
+				public void windowIconified(WindowEvent e) {}
+
+				@Override
+				public void windowOpened(WindowEvent e) {}				
+			}
+		);
+		
+		userChat = new JTextField();
+		userChat.setBounds(10, 384, 232, 19);
+		//userChat.setEditable(false);
+		getContentPane().add(userChat);
+		userChat.setColumns(10);
+		userChat.addActionListener(new ActionListener() {		
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				sendMessage(e.getActionCommand());
+				userChat.setText("");
+			}
+		});
+		
+		JButton btnSend = new JButton("Send");
+		btnSend.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				sendMessage(userChat.getText());
+				userChat.setText("");
+			}
+		});
+		btnSend.setFont(new Font("Times New Roman", Font.BOLD, 10));
+		btnSend.setBounds(341, 383, 85, 21);
+		//btnSend.setEnabled(false);
+		getContentPane().add(btnSend);
+		
+		btnSendFile = new JButton("Send File");
+		btnSendFile.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				fileTransferHelper.sendFile(btnSendFile, new IFileTransferMessage() {
+					
+					@Override
+					public void onFileSent(String fileName) {
+						displayMessage(fileName + " sent.");
+					}
+					
+					@Override
+					public void onFileReceived(String fileName) {}
+				});
+				startReceivingFile();
+			}
+		});
+		
+		btnSendFile.setFont(new Font("Times New Roman", Font.BOLD, 10));
+		btnSendFile.setBounds(252, 383, 85, 21);
+		//btnSendFile.setEnabled(false);
+		getContentPane().add(btnSendFile);
+		
+		chatHistory = new JTextArea();
+		chatHistory.setBounds(10, 10, 416, 364);
+		getContentPane().add(chatHistory);
+		
+		System.out.println("\nChat box GUI initialized.");
+	}
+	
+	private void startReceivingFile() {
+		try {
+			fileTransferHelper.waitingForFile(new IFileTransferMessage() {				
+				@Override
+				public void onFileSent(String fileName) {
+					
+				}
+				
+				@Override
+				public void onFileReceived(String fileName) {
+					displayMessage(fileName + " received.");
+				}
+			});						
+		} catch (IOException ioException) {
+			ioException.printStackTrace();
+		}
+	}
+	
+	public void displayMessage(String message) {
+		SwingUtilities.invokeLater(
+			new Runnable() {				
+				@Override
+				public void run() {
+					chatHistory.append(message);
+				}
+			}
+		);
+	}
+	
+	private void sendMessage(String msg) {
+		if (msg.equals("")) return;
+			
+		Message messagePackage = new Message(friendName, "\n " + myUsername + ": " + msg);
+		
+		try {
+			output.writeObject(messagePackage);		
+			System.out.println("\nMessage sent to: " + friendName);
+			displayMessage("\n " + myUsername + ": " + msg);
+		} catch (IOException e1) {
+			e1.printStackTrace();
+		}
+	}
+		
+	// allow text to be type into text box
+	public void ableToType(final boolean able) {
+		SwingUtilities.invokeLater(
+			new Runnable() {
+				public void run() {
+					userChat.setEditable(able);
+					//btnSend.setEnabled(able);
+					//btnSendFile.setEnabled(able);
+				}
+			}
+		);
+	}
+}

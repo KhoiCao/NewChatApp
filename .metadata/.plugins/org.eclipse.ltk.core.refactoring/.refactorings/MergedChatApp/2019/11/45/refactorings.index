@@ -1,0 +1,8 @@
+1572754832357	Rename field 'boxes'
+1572754870641	Rename field 'friendsStatuses'
+1572767925356	Rename type 'IFriendListClose'
+1572768038465	Rename local variable 'iClose'
+1572797676146	Rename local variable 'sql1'
+1572797685147	Rename local variable 'sql2'
+1572797695697	Rename local variable 'sql3'
+1572884407836	Delete element

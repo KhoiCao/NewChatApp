@@ -1,0 +1,257 @@
+package server;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.Socket;
+import java.net.SocketException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+
+import friendList.FriendStatus;
+import login.Account;
+import message.Message;
+
+public class ClientHandler implements Runnable {
+	
+	private boolean alreadyLoggedIn;
+	public boolean getAlreadyLoggedIn() { return alreadyLoggedIn; }
+	
+	private Socket connection;
+	private ObjectInputStream input;
+	private ObjectOutputStream output;
+	
+	// For data storage
+	private String username;
+	public String getUsername() { return username; }
+	
+	// For login
+	private Account account;
+	private boolean verified;
+	
+	//For friendstatus
+	private ArrayList<FriendStatus> statusList;
+	
+	private DatabaseManager databaseManager;
+	
+	// For message handling
+	private Message from;
+	private Message to;
+	
+	private IClientHandlerHelper iHandlerHelper;
+	
+	public ClientHandler(Socket connection, IClientHandlerHelper iHandlerHelper) {
+		this.alreadyLoggedIn = false;
+		this.connection = connection;
+		this.iHandlerHelper = iHandlerHelper;
+	}
+	
+	public void run() {
+		try {
+			setupStreams();
+			getAccInfo();
+			// If the current user is already logged in
+			if (iHandlerHelper.alreadyLogin(username)) {
+				alreadyLoggedIn = true;
+				return;
+			}
+			verified = verifyLogin();
+			sendLoginResult();
+			caseToClose();
+			if(!verified) { closeAll(); return; }
+			filterFriendStatus();
+			sendFriendStatus();
+			startReceivingMessage();
+		} catch (EOFException eofException) {
+			System.out.println("\nClient " + username + " terminated connection.");
+		} catch (SocketException socketException) {
+			System.out.println("\nClient " + username + " terminated connection.");
+		} catch (IOException ioException) {
+			ioException.printStackTrace();
+		} catch (ClassNotFoundException classNotFoundException) {
+			System.out.println("\nERROR: Unrecognized message!");
+		} finally {
+			closeAll();
+			terminateClient();
+		}
+	}
+
+
+	private void setupStreams() throws IOException {
+		output = new ObjectOutputStream(connection.getOutputStream());
+		output.flush();
+		input = new ObjectInputStream(connection.getInputStream());
+		System.out.println("\nStreams are now setup.");
+	}
+
+	private void getAccInfo() {
+		try {
+			account = (Account) input.readObject();
+			username = account.getUsername();
+			System.out.println("\n" + account.getUsername() + "  " + account.getPassword() + "  " + account.getIPadd());
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	/*private boolean verifyLogin() {
+		Connection dbConn = null;
+		PreparedStatement pst = null;
+		String sql;
+		int count = 0 ;
+		
+		try {
+	         //getConnection(dbConn);
+			Class.forName("org.sqlite.JDBC");
+	        dbConn = DriverManager.getConnection(MainServer.getDatabaseLocation());
+	        System.out.println("\nOpened database successfully.");
+	        
+	        sql = "SELECT USERNAME,PASSWORD FROM ACCOUNT WHERE USERNAME=? AND PASSWORD=?";
+	        pst = dbConn.prepareStatement(sql);
+	        pst.setString(1, account.getUsername());
+	        pst.setString(2, account.getPassword());
+	        ResultSet rs = pst.executeQuery();
+	        
+	        while(rs.next()) { count++; }
+	        rs.close();
+	        pst.close();
+	        
+		} catch ( Exception e ) {
+	         System.err.println( e.getClass().getName() + ": " + e.getMessage() );
+	         System.exit(0);
+	    }
+		// If user is valid set online flag to 1 and set current IP address
+		if (count == 1) {
+			sql = "UPDATE ACCOUNT SET ONLINE = 1, IP = ? WHERE USERNAME=?";
+			try {
+				pst = dbConn.prepareStatement(sql);
+				pst.setString(1, account.getIPadd().getHostAddress());
+				pst.setString(2, account.getUsername());
+				pst.executeUpdate();
+				
+				pst.close();
+		        dbConn.close();
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+			return true; 
+		}
+		
+		else return false;
+	}*/
+	
+	private void sendLoginResult() throws IOException {
+		output.writeObject(verified);
+		//output.flush();
+		System.out.println("\nSent login result.");
+	}
+	
+	public void filterFriendStatus() throws ClassNotFoundException, IOException {
+		// Wait until an object is sent
+		String getFriend = (String) input.readObject();
+		
+		statusList = new ArrayList<>();
+		
+		Connection dbConn = null;
+		PreparedStatement pst = null;
+		String sql, friendlist;
+		String[] idList;
+		ArrayList<Integer> intIds = new ArrayList<>();
+		ResultSet rs;
+		
+		try {
+			Class.forName("org.sqlite.JDBC");
+			dbConn = DriverManager.getConnection(MainServer.getDatabaseLocation());
+			System.out.println("\nOpened database successfully.");
+			
+			sql = "SELECT FRIEND FROM ACCOUNT WHERE USERNAME=?";
+	        pst = dbConn.prepareStatement(sql);
+	        pst.setString(1, account.getUsername());
+	        rs = pst.executeQuery();
+	        
+	        friendlist = rs.getString("FRIEND");
+	        idList = friendlist.split(",");
+	        
+	        rs.close();
+	        pst.close();
+	        
+	        for(String i : idList) { intIds.add(Integer.parseInt(i)); }
+	
+	        for(String i: idList) {
+	       	 sql = "SELECT * FROM ACCOUNT WHERE ID=?";
+	       	 pst = dbConn.prepareStatement(sql);
+	       	 pst.setString(1, i);
+	       	 rs = pst.executeQuery();
+	       	 
+	       	 String friendname = rs.getString("USERNAME");
+	       	 String IP = rs.getString("IP");
+	       	 int ID = rs.getInt("ID");
+	       	 int isOnline = rs.getInt("ONLINE");
+	       	 System.out.println("\nFriend name: "+ friendname + " ID: " + ID + " IP: " + IP + " Online: " + isOnline);
+	       	 FriendStatus thisFriend = new FriendStatus(friendname, isOnline, ID, IP);
+	       	 statusList.add(thisFriend);
+	        }
+	        
+	        dbConn.close();
+	        
+		} catch ( Exception e ) {
+			e.printStackTrace();
+		}
+		
+		System.out.println("\nFiltered friend statuses.");
+	}
+	
+	private void sendFriendStatus() throws IOException {
+		output.reset();
+		output.writeObject(statusList);
+		System.out.println("\nSent status list.");
+	}
+	
+	private void caseToClose() throws IOException, ClassNotFoundException {
+		if(!verified) { closeAll(); } 
+		System.out.println("\nLogin successful: " + verified);
+	}
+	
+	public void closeAll() {
+		try {
+			output.close();
+			input.close();
+			connection.close();
+			System.out.println("\nConnection closed: " + account.getUsername());
+		} catch (IOException ioException) {
+			ioException.printStackTrace();
+		}
+	}
+	
+	private void terminateClient() {
+		iHandlerHelper.onClientTerminated(username);
+	}
+	
+	//pass the message to the receiver
+	public void passMessage(String sender, String message) throws IOException {
+		to = new Message(sender, message);
+		output.writeObject(to);
+		output.flush();
+		System.out.println("\nMessage passed from: " + sender);
+	}
+	
+	private void startReceivingMessage() throws ClassNotFoundException, IOException {
+		System.out.println("\nStart receiving messages from client: " + account.getUsername());
+		while(true) {
+			from = (Message) input.readObject();
+			System.out.println("\nMessage read.");
+			String receiver = from.getUsername();
+			String message = from.getMessage();
+			iHandlerHelper.transferMsg(receiver, username, message);
+		}
+	}
+}
+
+

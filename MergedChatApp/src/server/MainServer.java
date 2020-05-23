@@ -1,0 +1,91 @@
+package server;
+
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class MainServer implements IClientHandlerHelper {
+	
+	private static final int port = 2000, backlog = 10;
+	
+	private ServerSocket server;
+	private Socket connection;
+	
+	private static ArrayList<ClientHandler> clients = new ArrayList<>();
+	private static ExecutorService pool = Executors.newFixedThreadPool(4);
+	
+	public static void main(String[] args) {
+		new MainServer();
+	}
+	
+	public MainServer() {
+		try {
+			server = new ServerSocket(port, backlog);
+			server.setReuseAddress(true);
+			
+			while(true) {
+				connection = server.accept();
+				
+				ClientHandler client = new ClientHandler(connection, this);
+				
+				clients.add(client);	
+				System.out.println("\nNumber of connected clients: " + clients.size());
+				pool.execute(client);
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+	}
+	
+	@Override
+	public void transferMsg(String receiver, String sender, String message) {
+		for (ClientHandler handler : clients) {								
+			if (!handler.getUsername().equals(receiver)) 
+				continue;
+			
+			try {
+				handler.passMessage(sender, message);
+				System.out.println("\nMessage sent from: " + sender + " to " + receiver);
+		    } catch (IOException e) {
+		    	e.printStackTrace();
+		    }							    
+		}
+	}
+	
+	@Override
+	public boolean alreadyLogin(String username) {
+		if (checkLoggedIn(username)) {
+			System.out.println("\nAlready logged in as " + username);
+			return true;
+		}
+		
+		return false;
+	}
+	
+	private boolean checkLoggedIn(String username) {
+		boolean firstLogin = false;
+		
+		for (ClientHandler handler: clients) {
+			if (handler.getUsername().equals(username)) {
+				if (!firstLogin) firstLogin = true;
+				else return true;
+			}
+		}
+		
+		return false;
+	}
+	
+	@Override
+	public void onClientTerminated(String username) {
+		if (checkLoggedIn(username)) clients.removeIf(x -> (x.getUsername().equals(username) && x.getAlreadyLoggedIn()));
+		else clients.removeIf(x -> (x.getUsername().equals(username)));
+		System.out.println("\nRemoved client " + username + " from client list");
+		System.out.println("\nNumber of connected clients: " + clients.size());
+	}
+
+}
+

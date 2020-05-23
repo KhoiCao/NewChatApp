@@ -1,0 +1,179 @@
+package chatBox;
+
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+import javax.swing.JButton;
+import javax.swing.JFileChooser;
+import javax.swing.SwingWorker;
+
+public class FileTransferHelper {
+	
+	private static int port = 2001, backlog = 4;
+	private static String downloadFileDest = "D:\\";
+	
+	private ServerSocket peer;
+	private Socket connection;
+	private ObjectOutputStream output;
+	private ObjectInputStream input;
+	
+	private JFileChooser fileChooser;
+	
+	private String friendIP;
+	
+	public FileTransferHelper(String friendIP) {
+		this.friendIP = friendIP;
+	}	
+	
+	public void sendFile(JButton btnSendFile) {
+		fileChooser = new JFileChooser();		
+		//ObjectOutputStream output = null;
+		int returnVal = fileChooser.showOpenDialog(btnSendFile);
+
+        if (returnVal == JFileChooser.APPROVE_OPTION) {
+            File file = fileChooser.getSelectedFile();
+            FileInputStream fileInput;
+            
+            try {
+	            //connectToSourcePeer();
+	            //setupOutputStream();   
+            	connection = new Socket(friendIP, port);
+            	System.out.println("\nPreparing to send file to " + friendIP);
+	            ObjectOutputStream output = new ObjectOutputStream(connection.getOutputStream());
+	            fileInput = new FileInputStream(file);
+	            
+	            byte[] buffer = new byte[2048];
+	            
+	    		// Send file's name
+	            output.writeObject(file.getName());
+	            
+	            // Send file's size
+	            output.writeObject(file.length());
+	            
+	            // Send file's bytes
+	            int read;
+	            while ((read = fileInput.read(buffer)) > 0) {
+	    			//output.writeObject(buffer);
+	    			//output.flush();
+	            	output.write(buffer, 0, read);
+	            }
+	            
+	            fileInput.close();
+				output.close();
+	            System.out.println("\n" + file.getName() + " " + file.length() + " bytes sent.");
+	            //writeFile(fileInput, fileChooser.getSelectedFile().getName(), fileChooser.getSelectedFile().length());            
+			} catch (FileNotFoundException e1) {
+				e1.printStackTrace();
+			} catch (IOException e1) {
+				e1.printStackTrace();
+			} /*finally {
+				try {
+					fileInput.close();
+					//output.close();
+				} catch (IOException e) {				
+					e.printStackTrace();
+				}	            
+			}*/
+        }
+	}
+	
+	// Connect to the computer at which it will send a file
+	private void connectToSourcePeer() throws IOException {
+		System.out.println("\nAttempting connection... ");
+		connection = new Socket(friendIP, port);
+		System.out.println("\nConnected to: " + friendIP);
+	}
+	
+	// Setup output stream
+	private void setupOutputStream() throws IOException {
+		output = new ObjectOutputStream(connection.getOutputStream());
+        System.out.println("\nOutput stream is setup.");
+	}
+		
+	// Read file into bytes and send them
+	private void writeFile(FileInputStream fileInput, String fileName, long fileSize) throws IOException {
+		byte[] buffer = new byte[2048];
+        
+		// Send file's name
+        output.writeObject(fileName);
+        
+        // Send file's size
+        output.writeObject(fileSize);
+        
+        // Send file's bytes
+        int read;
+        while ((read = fileInput.read(buffer)) > 0) {
+			//output.writeObject(buffer);
+			//output.flush();
+        	output.write(buffer, 0, read);
+        }
+        
+        System.out.println("\n" + fileName + " sent.");
+	}
+	
+	private void receiveFile() throws IOException, ClassNotFoundException {
+		byte[] buffer = new byte[4096];
+        int read = 0;
+		
+		setupInputStream();
+		
+        String fileName = (String) input.readObject();
+        long fileSize = (long) input.readObject();
+        System.out.println("\nFile size: " + fileSize);
+        
+        //int totalRead = 0;
+      	int remaining = (int) fileSize;
+        
+        System.out.println("\nReceiving: " + fileName);      
+        
+        FileOutputStream fileOutput = new FileOutputStream(downloadFileDest + fileName);
+		
+		while((read = input.read(buffer, 0, Math.min(buffer.length, remaining))) > 0) {
+			//totalRead += read;
+			remaining -= read;
+			//System.out.println("read " + totalRead + " bytes.");
+			fileOutput.write(buffer, 0, read);
+		}
+        System.out.println("\n" + fileName + " received.");
+        
+        fileOutput.close();
+        input.close();
+        connection.close();
+  	}
+	
+	// Input stream for receiving files
+	private void setupInputStream() throws IOException {
+		input = new ObjectInputStream(connection.getInputStream());
+		System.out.println("\nInput stream is setup.");
+	}
+	
+	// Waiting for another clients to send files 
+	public void waitingForFile() throws IOException {
+		SwingWorker<Void, Void> swingWorker = new SwingWorker<Void, Void>(){
+			@Override
+			protected Void doInBackground() throws Exception {
+				while(true) {
+					waitingForConnection();
+					receiveFile();
+				}				
+			}			
+		};
+		swingWorker.execute();
+	}
+	
+	private void waitingForConnection() throws IOException {
+		System.out.println("\nWaiting for connection.");
+		peer = new ServerSocket(port, backlog);
+		connection = peer.accept();
+		System.out.println("\nWaiting for file from: " + friendIP);
+	}
+	
+}

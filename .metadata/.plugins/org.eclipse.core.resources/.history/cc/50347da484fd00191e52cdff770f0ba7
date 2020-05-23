@@ -1,0 +1,485 @@
+package chatBox;
+
+import java.awt.Font;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.WindowEvent;
+import java.awt.event.WindowListener;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+import javax.swing.JButton;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
+
+import message.Message;
+
+public class ChatBoxGUI extends JFrame {
+
+	private int windowWidth = 450, windowHeight = 450;
+	
+	private JTextField userChat;
+	private JTextArea chatHistory;
+	private JButton btnSendFile;
+	
+	private String friendName;
+	public String getFriendName() { return friendName; }
+	
+	private String myUsername;
+	
+	private ObjectOutputStream output;
+	
+	private FileTransferHelper fileTransferHelper;
+	//private String friendIP;
+	//private JFileChooser fc;
+	
+	public ChatBoxGUI(IChatBoxClose iClose, String myUsername, String friendName, String friendIP, ObjectOutputStream output) {	
+		this.myUsername = myUsername;
+		this.friendName = friendName;
+		this.output = output;
+		this.fileTransferHelper = new FileTransferHelper(friendIP); 
+		//this.friendIP = friendIP;
+		
+		System.out.println("\nYou are now connected with " + friendName + " at " + friendIP);
+		
+		try {
+			fileTransferHelper.waitingForFile();
+			//whileReceivingFile();
+			//waitingForFile();
+		} catch (IOException ioException) {
+			ioException.printStackTrace();
+		}
+		
+		SwingUtilities.invokeLater(
+			new Runnable() {			
+				@Override
+				public void run() {
+					initialize(iClose);
+				}				
+			}
+		);	
+		
+		
+	}
+	
+	private void initialize(final IChatBoxClose iClose) {
+		setTitle(friendName);
+		setLocationRelativeTo(null);
+		setBounds(100, 100, windowWidth, windowHeight);
+		setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+		getContentPane().setLayout(null);
+		setVisible(true);
+		addWindowListener(
+			new WindowListener() {				
+				@Override
+				public void windowClosing(WindowEvent e) {}
+				
+				@Override
+				public void windowClosed(WindowEvent e) {
+					iClose.onChatBoxClose(friendName);
+				}
+
+				@Override
+				public void windowActivated(WindowEvent e) {}
+
+				@Override
+				public void windowDeactivated(WindowEvent e) {}
+
+				@Override
+				public void windowDeiconified(WindowEvent e) {}
+
+				@Override
+				public void windowIconified(WindowEvent e) {}
+
+				@Override
+				public void windowOpened(WindowEvent e) {}				
+			}
+		);
+		
+		userChat = new JTextField();
+		userChat.setBounds(10, 384, 232, 19);
+		//userChat.setEditable(false);
+		getContentPane().add(userChat);
+		userChat.setColumns(10);
+		userChat.addActionListener(new ActionListener() {		
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				sendMessage(e.getActionCommand());
+				userChat.setText("");
+			}
+		});
+		
+		JButton btnSend = new JButton("Send");
+		btnSend.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				sendMessage(userChat.getText());
+				userChat.setText("");
+			}
+		});
+		btnSend.setFont(new Font("Times New Roman", Font.BOLD, 10));
+		btnSend.setBounds(341, 383, 85, 21);
+		//btnSend.setEnabled(false);
+		getContentPane().add(btnSend);
+		
+		btnSendFile = new JButton("Send File");
+		btnSendFile.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				fileTransferHelper.sendFile(btnSendFile);
+				//sendFile();
+			}
+		});
+		
+		btnSendFile.setFont(new Font("Times New Roman", Font.BOLD, 10));
+		btnSendFile.setBounds(252, 383, 85, 21);
+		//btnSendFile.setEnabled(false);
+		getContentPane().add(btnSendFile);
+		
+		chatHistory = new JTextArea();
+		chatHistory.setBounds(10, 10, 416, 364);
+		getContentPane().add(chatHistory);
+		
+		System.out.println("\nChat box GUI initialized.");
+	}
+	
+	public void displayMessage(String message) {
+		SwingUtilities.invokeLater(
+			new Runnable() {				
+				@Override
+				public void run() {
+					chatHistory.append(message);
+				}
+			}
+		);
+	}
+	
+	private void sendMessage(String msg) {
+		if (msg.equals("")) return;
+			
+		Message messagePackage = new Message(friendName, "\n " + myUsername + ": " + msg);
+		
+		try {
+			output.writeObject(messagePackage);		
+			System.out.println("\nMessage sent to: " + friendName);
+			displayMessage("\n" + myUsername + ": " + msg);
+		} catch (IOException e1) {
+			e1.printStackTrace();
+		}
+	}
+		
+	// allow text to be type into text box
+	public void ableToType(final boolean able) {
+		SwingUtilities.invokeLater(
+			new Runnable() {
+				public void run() {
+					userChat.setEditable(able);
+					//btnSend.setEnabled(able);
+					//btnSendFile.setEnabled(able);
+				}
+			}
+		);
+	}
+	
+	//variable of stream to send file
+		/*private ServerSocket peer;
+		private Socket socket;
+		private ObjectOutputStream oos;
+		private ObjectInputStream ois;
+		
+		private void sendFile() {
+			fc = new JFileChooser();
+			int returnVal = fc.showOpenDialog(btnSendFile);
+
+	        if (returnVal == JFileChooser.APPROVE_OPTION) {
+	            File file = fc.getSelectedFile();
+	            FileInputStream fis;
+	            try {
+		            socket = new Socket(friendIP,2001);
+		            ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+		            fis = new FileInputStream(file);
+					byte[] buffer = new byte[4096];
+			        String name = fc.getSelectedFile().getName();
+			        long size = fc.getSelectedFile().length();
+			        oos.writeObject(name);
+			        oos.writeObject(size);
+			        while (fis.read(buffer) > 0) {
+						oos.write(buffer);
+						oos.flush();
+			        }
+		            fis.close();
+		            //oos.close();
+				} catch (FileNotFoundException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				} catch (IOException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				}
+	        }
+	        
+		}
+		
+		private void receiveFile() throws IOException, ClassNotFoundException {
+			ois = new ObjectInputStream(socket.getInputStream());
+	        byte[] buffer = new byte[4096];
+	        String name;
+	        long size;
+	        int read = 0;
+	        name = (String) ois.readObject();
+	        size = (long) ois.readObject();
+	        System.out.println(name);
+	        FileOutputStream fos = new FileOutputStream("D:\\" + name);
+			int totalRead = 0;
+			int remaining = (int) size;
+			while((read = ois.read(buffer, 0, Math.min(buffer.length, remaining))) > 0) {
+				totalRead += read;
+				remaining -= read;
+				//System.out.println("read " + totalRead + " bytes.");
+				fos.write(buffer, 0, read);
+			}
+	        System.out.println("FILE RECEIVED;");
+	        fos.close();
+	        ois.close();
+	        socket.close();
+	  	}
+		
+		private void whileReceivingFile() throws IOException {
+			SwingWorker<Void, Void> swingWorker = new SwingWorker<Void, Void>(){
+
+				@Override
+				protected Void doInBackground() throws Exception {
+					// TODO Auto-generated method stub
+					while(true) {
+						peer = new ServerSocket(2001,4);
+						socket = peer.accept();
+						receiveFile();
+					}
+					
+				}
+				
+			};
+			swingWorker.execute();
+		}
+	
+	//variable of stream to send file
+			/*private ServerSocket peer;
+			private Socket connection;
+			private ObjectOutputStream output_file;
+			private ObjectInputStream input;
+			private JFileChooser fc;
+			private String friendIP;
+	
+	private void sendFile() {
+		fc = new JFileChooser();
+		int returnVal = fc.showOpenDialog(btnSendFile);
+
+        if (returnVal == JFileChooser.APPROVE_OPTION) {
+            File file = fc.getSelectedFile();
+            FileInputStream fis;
+            try {
+	            connection = new Socket(friendIP,2001);
+	            ObjectOutputStream oos = new ObjectOutputStream(connection.getOutputStream());
+	            fis = new FileInputStream(file);
+				byte[] buffer = new byte[4096];
+		        String name = fc.getSelectedFile().getName();
+		        long size = fc.getSelectedFile().length();
+		        oos.writeObject(name);
+		        oos.writeObject(size);
+		        while (fis.read(buffer) > 0) {
+					oos.write(buffer);
+					oos.flush();
+		        }
+		        System.out.println("\nFILE SENT");
+	            fis.close();
+	            //oos.close();
+			} catch (FileNotFoundException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			} catch (IOException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
+        }
+        
+	}
+	
+	private void receiveFile() throws IOException, ClassNotFoundException {
+		input = new ObjectInputStream(connection.getInputStream());
+        byte[] buffer = new byte[4096];
+        String name;
+        long size;
+        int read = 0;
+        name = (String) input.readObject();
+        size = (long) input.readObject();
+        System.out.println(name);
+        FileOutputStream fos = new FileOutputStream("D:\\" + name);
+		int totalRead = 0;
+		int remaining = (int) size;
+		while((read = input.read(buffer, 0, Math.min(buffer.length, remaining))) > 0) {
+			totalRead += read;
+			remaining -= read;
+			//System.out.println("read " + totalRead + " bytes.");
+			fos.write(buffer, 0, read);
+		}
+        System.out.println("FILE RECEIVED;");
+        fos.close();
+        input.close();
+        connection.close();
+  	}
+	
+	private void whileReceivingFile() throws IOException {
+		SwingWorker<Void, Void> swingWorker = new SwingWorker<Void, Void>(){
+
+			@Override
+			protected Void doInBackground() throws Exception {
+				// TODO Auto-generated method stub
+				while(true) {
+					peer = new ServerSocket(2001,4);
+					connection = peer.accept();
+					receiveFile();
+				}
+				
+			}
+			
+		};
+		swingWorker.execute();
+	}
+	
+	/*private static int port = 2001, backlog = 4;
+	private static String downloadFileDest = "D:\\";
+	
+	private ServerSocket peer;
+	private Socket connection;
+	private ObjectOutputStream output_file;
+	private ObjectInputStream input;
+	
+	private String friendIP;*/
+	
+	/*public void sendFile() {
+		JFileChooser fileChooser = new JFileChooser();
+		FileInputStream fileInput = null;
+		int returnVal = fileChooser.showOpenDialog(btnSendFile);
+
+        if (returnVal == JFileChooser.APPROVE_OPTION) {
+            File file = fileChooser.getSelectedFile();
+            
+            try {
+	            connectToSourcePeer();
+	            setupOutputStream();            
+	            fileInput = new FileInputStream(file);
+	            writeFile(fileInput, fileChooser.getSelectedFile().getName(), fileChooser.getSelectedFile().length());            
+			} catch (FileNotFoundException e1) {
+				e1.printStackTrace();
+			} catch (IOException e1) {
+				e1.printStackTrace();
+			} finally {
+				try {
+					fileInput.close();
+					//output.close();
+				} catch (IOException e) {				
+					e.printStackTrace();
+				}	            
+			}
+        }
+	}
+	
+	// Connect to the computer at which it will send a file
+	private void connectToSourcePeer() throws IOException {
+		System.out.println("\nAttempting connection... ");
+		connection = new Socket(friendIP, port);
+		System.out.println("\nConnected to: " + friendIP);
+	}
+	
+	// Setup output stream
+	private void setupOutputStream() throws IOException {
+		output_file = new ObjectOutputStream(connection.getOutputStream());
+        System.out.println("\nOutput stream is setup.");
+	}
+		
+	// Read file into bytes and send them
+	private void writeFile(FileInputStream fileInput, String fileName, long fileSize) throws IOException {
+		byte[] buffer = new byte[4096];
+        
+		// Send file's name
+		output_file.writeObject(fileName);
+		output_file.flush();
+        
+        // Send file's size
+		output_file.writeObject(fileSize);
+		output_file.flush();
+        
+        // Send file's bytes
+        while (fileInput.read(buffer) > 0) {
+        	output_file.writeObject(buffer);
+        	output_file.flush();
+        }
+        
+        System.out.println("\n" + fileName + " sent.");
+	}*/
+	
+	/*private void receiveFile() throws IOException, ClassNotFoundException {
+		setupInputStream();
+		
+        String fileName = (String) input.readObject();
+        long fileSize = (long) input.readObject();
+        
+        //int totalRead = 0;
+      	int remaining = (int) fileSize;
+        
+        System.out.println("\nReceiving: " + fileName);
+        
+        byte[] buffer = new byte[4096];
+        int read = 0;
+        
+        FileOutputStream fileOutput = new FileOutputStream(downloadFileDest + fileName);
+		
+		while((read = input.read(buffer, 0, Math.min(buffer.length, remaining))) > 0) {
+			//totalRead += read;
+			remaining -= read;
+			//System.out.println("read " + totalRead + " bytes.");
+			fileOutput.write(buffer, 0, read);
+		}
+        System.out.println("\n" + fileName + " received.");
+        
+        fileOutput.close();
+        input.close();
+        connection.close();
+  	}
+	
+	// Input stream for receiving files
+	private void setupInputStream() throws IOException {
+		input = new ObjectInputStream(connection.getInputStream());
+		System.out.println("\nInput stream is setup.");
+	}
+	
+	// Waiting for another clients to send files 
+	public void waitingForFile() throws IOException {
+		SwingWorker<Void, Void> swingWorker = new SwingWorker<Void, Void>(){
+			@Override
+			protected Void doInBackground() throws Exception {
+				while(true) {
+					waitingForConnection();
+					receiveFile();
+				}				
+			}			
+		};
+		swingWorker.execute();
+	}
+	
+	private void waitingForConnection() throws IOException {
+		System.out.println("\nWaiting for connection.");
+		peer = new ServerSocket(port, backlog);
+		connection = peer.accept();
+		System.out.println("\nWaiting for file from: " + friendIP);
+	}*/
+}

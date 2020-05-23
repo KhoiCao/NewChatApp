@@ -1,0 +1,55 @@
+package friendList;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.ArrayList;
+
+public class FriendListManager {
+	
+	public interface IFriendListManager {
+		public void onFriendsReceive(ArrayList<FriendStatus> friendStatuses);
+	}
+	
+	private String myUsername;
+		
+	private ObjectOutputStream output;
+	private ObjectInputStream input;
+		
+	private IFriendListManager iListManager;
+	
+	public FriendListManager(IFriendListManager iListManager, ObjectInputStream input, ObjectOutputStream output/*, String myUsername, ConnectionReferences connRefs*/) {
+		this.iListManager = iListManager;
+		//this.myUsername = myUsername;
+		this.input = input;
+		this.output = output;		
+	}
+	
+	public void requestFriendList() {
+		try {
+			sendRequest();
+			receiveFriendList();
+		} catch (EOFException eofException) {
+			System.out.println("\nClient terminated connection. ");
+		} catch (IOException ioException) {
+			ioException.printStackTrace();
+		} catch (ClassNotFoundException classNotFoundException) {
+			System.out.println("\nERROR: Unrecognized friend list.");
+		} catch (NullPointerException nullPointerException) {
+			System.out.println("\nConnections ended.");
+		}
+	}
+	
+	private void sendRequest() throws IOException {
+		output.writeObject(myUsername);
+	}
+	
+	private void receiveFriendList() throws IOException, ClassNotFoundException {
+		//ArrayList<FriendStatus> friendStatuses = new ArrayList<>();
+		//friendStatuses.addAll((ArrayList<FriendStatus>) input.readObject());
+		friendStatuses = (ArrayList<FriendStatus>) input.readObject();
+		System.out.println("\nFriend list received.");
+		iListManager.onFriendsReceive(friendStatuses);
+	}
+}

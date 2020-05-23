@@ -1,0 +1,191 @@
+package login;
+
+import java.awt.EventQueue;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JTextField;
+
+import client.Client;
+import client.ConnectionReferences;
+
+import javax.swing.JPasswordField;
+import javax.swing.JButton;
+import java.awt.Font;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+import login.LoginManager.IVerified;;
+
+public class LoginGUI extends JFrame{
+
+	public interface ILoginSuccess {
+		public void onSuccess(String username, String password, ConnectionReferences connRefs);
+	}
+	
+	private JTextField usernameText, hostIP;
+	private JPasswordField passwordText;
+	private JLabel lblWelcome, lblUsername, lblPassword, lblHost;
+	private JButton btnLogin, btnSignUp;
+	
+	private String username;
+	private String password;
+	
+	private ILoginSuccess iLoginSuccess;
+	
+	private LoginManager loginManager;
+	
+	public static void main(String[] args) {
+		new LoginGUI(null);
+	}
+
+	public LoginGUI(ILoginSuccess iLoginSuccess) {
+		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		setLocationRelativeTo(null);
+		setVisible(true);
+		
+		this.iLoginSuccess = iLoginSuccess;
+		
+		EventQueue.invokeLater(new Runnable() {
+			public void run() {
+				try {
+					initialize();	
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		});	
+		
+		loginManager = new LoginManager();	
+	}
+	
+	private void initialize() {
+		setBounds(100, 100, 300, 350);
+		setTitle("Yooha¡ Messenger");
+		setLocationRelativeTo(null);
+		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		getContentPane().setLayout(null);
+		
+		lblWelcome = new JLabel("Welcome!!!");
+		lblWelcome.setFont(new Font("Tahoma", Font.BOLD, 30));
+		lblWelcome.setBounds(54, 20, 201, 47);
+		getContentPane().add(lblWelcome);
+		
+		lblUsername = new JLabel("Username");
+		lblUsername.setBounds(30, 97, 99, 24);
+		getContentPane().add(lblUsername);
+		
+		lblPassword = new JLabel("Password");
+		lblPassword.setBounds(30, 132, 105, 24);
+		getContentPane().add(lblPassword);
+		
+		lblHost = new JLabel("Host IP");
+		lblHost.setBounds(30, 167, 105, 24);
+		getContentPane().add(lblHost);
+		
+		usernameText = new JTextField();
+		usernameText.setBounds(116, 100, 96, 19);
+		getContentPane().add(usernameText);
+		usernameText.setColumns(10);
+		
+		passwordText = new JPasswordField();
+		passwordText.setBounds(116, 137, 96, 19);
+		getContentPane().add(passwordText);
+		
+		hostIP = new JTextField();
+		hostIP.setBounds(116, 174, 96, 19);
+		// Set default value to be your localhost
+		hostIP.setText(Client.localhost);
+		getContentPane().add(hostIP);
+		hostIP.setColumns(12);
+		
+		btnLogin = new JButton("Login");
+		btnLogin.addActionListener(
+			new ActionListener() {			
+				@Override
+				public void actionPerformed(ActionEvent e) {
+					// Set the host IP address to connect to
+					Client.setHost(hostIP.getText());
+					
+					// Disable all views so that none of them can be activated while logging in
+					enableAll(false);
+					
+					// Send username and password to server to verify
+					sendAccountInfo(true);
+				}
+			}
+		);
+		
+		btnLogin.setBounds(100, 223, 85, 21);
+		getContentPane().add(btnLogin);
+		
+		btnSignUp = new JButton("Sign Up");
+		btnSignUp.setBounds(100, 250, 85, 21);
+		btnSignUp.addActionListener(new ActionListener() {
+			
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				// Set the host IP address to connect to
+				Client.setHost(hostIP.getText());
+				
+				// Disable all views so that none of them can be activated while signing up
+				enableAll(false);
+				// Send username and password to server for signing up new account
+				sendAccountInfo(false);
+			}
+		});
+		getContentPane().add(btnSignUp);
+	}
+	
+	// Send username and password to server to verify 
+	private void sendAccountInfo(boolean isLogin) {
+		username = usernameText.getText();
+		password = makePassword(); 
+		
+		if (username.equals("")) {
+			showMessage("Please enter a username!");
+			return;
+		}
+		
+		if (password.equals("")) {
+			showMessage("Please enter a password!");
+			return;
+		}
+		
+		System.out.println("\nInput username: " + username + "\nInput password: " + password);
+		
+		loginManager.requestAccount(username, password, isLogin, new IVerified() {			
+			@Override
+			public void loginVerified(boolean verified, ConnectionReferences connRefs) {
+				// allow all views to be active again
+				enableAll(true);
+				
+				if (verified) {
+					// dispose off this GUI when user login successfully
+					dispose();
+					
+					// return connection references back to Client
+					iLoginSuccess.onSuccess(username, password, connRefs);
+				}
+			}
+		});
+	}
+	
+	private String makePassword() {
+		String str = "";
+		for (char c : passwordText.getPassword())
+			str += c;
+		return str;
+	}
+	
+	private void enableAll(boolean flag) {
+		usernameText.setEnabled(flag);
+		passwordText.setEnabled(flag);
+		btnLogin.setEnabled(flag);
+		btnSignUp.setEnabled(flag);
+	}
+	
+	private void showMessage(String msg) {
+		JOptionPane.showMessageDialog(this, msg);
+	}
+}

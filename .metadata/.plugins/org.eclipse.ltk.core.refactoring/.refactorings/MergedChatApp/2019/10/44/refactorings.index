@@ -1,0 +1,25 @@
+1572157775886	Delete element
+1572160880803	Delete element
+1572257674282	Rename field 'rcvMsg'
+1572263307808	Rename type 'IChatBoxCLose'
+1572271598634	Rename method 'getUserName'
+1572272242077	Delete element
+1572272246449	Delete element
+1572323886091	Rename local variable 'c'
+1572356918677	Rename local variable 'c'
+1572357695695	Rename local variable 'id'
+1572362004549	Rename field 'friendsStatus'
+1572363444159	Rename method 'sendFriendStatus'
+1572366260835	Delete element
+1572366372478	Delete element
+1572366753162	Delete element
+1572366786751	Delete element
+1572531180697	Rename field 'acc'
+1572531545561	Rename local variable 'pst'
+1572533235548	Rename local variable 'rs'
+1572534869319	Rename local variable 'firstLog'
+1572535538938	Rename local variable 'pst'
+1572536682140	Rename local variable 'pst'
+1572537208360	Rename local variable 'pst'
+1572541255570	Rename local variable 'dbConn'
+1572541311759	Rename local variable 'dbConn'

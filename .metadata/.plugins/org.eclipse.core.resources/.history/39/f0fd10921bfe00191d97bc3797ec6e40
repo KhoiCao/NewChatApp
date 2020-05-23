@@ -1,0 +1,288 @@
+package client;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.Socket;
+import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
+
+import javax.swing.SwingWorker;
+
+import chatBox.ChatBoxGUI;
+import chatBox.IChatBoxClose;
+import friendList.FriendListGUI;
+import friendList.FriendListGUI.IFriendList;
+import friendList.FriendListManager;
+import friendList.FriendListManager.IFriendListManager;
+import friendList.FriendStatus;
+import friendList.FriendItem.IFriendItemClick;
+import login.Account;
+import login.LoginGUI.ILoginSuccess;
+import login.LoginGUI;
+import message.Message;
+
+public class Client implements ILoginSuccess, IFriendItemClick, IFriendList, IChatBoxClose, IFriendListManager {
+	
+	private static final int port = 2000;
+	public static final String localhost = "127.0.0.1";
+	
+	private Socket connection;
+	private ObjectOutputStream output;
+	private ObjectInputStream input;
+	
+	private static String serverIP;
+	
+	private Account account;
+	
+	private FriendListGUI friendListGUI;
+	private FriendListManager friendListManager;
+	private ArrayList<FriendStatus> friendStatuses = new ArrayList<>();
+	
+	private Message receivedMessage;
+	private ArrayList<ChatBoxGUI> chatBoxes;
+	
+	public static void main(String[] args) {
+		new Client(localhost);
+	}
+	
+	public Client(String host) {
+		serverIP = host;
+		
+		// Create a login form
+		new LoginGUI(this);
+	}
+	
+	public static int getPort() { return port; }
+	
+	public static String getHost() { return serverIP; }
+	
+	public static void setHost(String host) { serverIP = host; } 
+	
+	// Get my real InetAddress
+	public static InetAddress getMyInetAddress() {
+		try {
+			Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+			for (NetworkInterface nif : Collections.list(interfaces)) {
+				//filters out 127.0.0.1, inactive interfaces and virtual interfaces(from VM...)
+				if (nif.isLoopback() || nif.isVirtual() || !nif.isUp())
+					continue;
+				
+				return nif.getInetAddresses().nextElement();
+			}
+		} catch (SocketException e) {
+			throw new RuntimeException(e);
+		}
+		
+		return null;
+	}
+
+	@Override
+	public void onLoginSuccess(String username, String password, ConnectionReferences connRefs) {
+		// Bind connection references
+		bindReferences(connRefs);
+		
+		// Create an account associated with this client
+		account = new Account(username, password, getMyInetAddress());
+		
+		// Initialize chat box holder
+		chatBoxes = new ArrayList<>();
+		
+		// Request friend list
+		friendListManager = new FriendListManager(this, input, output);
+		friendListManager.requestFriendList();
+		
+		// Initialize friend list GUI
+		friendListGUI = new FriendListGUI(/*friendStatuses, */account.getUsername(), /*this,*/ this);
+		
+		// Display friends 
+		friendListGUI.displayFriends(friendStatuses);
+		
+		try {
+			whileChatting();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	// Binding references of i/o streams and socket
+	private void bindReferences(ConnectionReferences connRefs) {
+		output = connRefs.getOutput();
+		input = connRefs.getInput();
+		connection = connRefs.getConnection();
+	}
+
+	@Override
+	public void onFriendItemClick(String friendName) {
+		// If that friend's chat box is already open 
+		if (chatBoxes.stream().filter(x -> x.getFriendName().equals(friendName)).findFirst().isPresent()) {
+			System.out.println("\nAlready chatting with " + friendName);
+			return;
+		}
+		
+		String friendIP = "";
+		for (FriendStatus friendStatus : friendStatuses) {
+			if (friendStatus.getUsername().equals(friendName))
+				friendIP = friendStatus.getIP();
+		}
+		
+		ChatBoxGUI chatBox = new ChatBoxGUI(this, account.getUsername(), friendName, friendIP, output);
+		chatBoxes.add(chatBox);
+		System.out.println("\nNumber of active chatboxes: " + chatBoxes.size());
+	}
+	
+	// Class for compose the chatbox and the message sent to it
+	private class BoxMessage {
+		
+		private ChatBoxGUI chatbox;
+		private String message;
+		
+		public BoxMessage(ChatBoxGUI chatbox, String message) {
+			super();
+			this.chatbox = chatbox;
+			this.message = message;
+		}
+
+		public ChatBoxGUI getChatbox() { return chatbox; }
+
+		public String getMessage() { return message; }
+			
+	}
+	
+	//receive message from server, check for username and create new chat box if not in chatting list
+	private void whileChatting() throws IOException {
+		SwingWorker<Void, BoxMessage> swingWorker = new SwingWorker<Void, BoxMessage>() {
+
+			@Override
+			protected Void doInBackground() throws Exception {
+				
+				boolean alreadyChatting;
+				String friendIP = "";
+				
+				while(true) {
+					alreadyChatting = false;
+					
+					try {
+						receivedMessage = (Message) input.readObject();
+						System.out.println("\nMessage received.");
+						
+						for (FriendStatus fs: friendStatuses) {
+							if(fs.getUsername().equals(receivedMessage.getUsername())) { 
+								friendIP = fs.getIP();
+							}
+						}
+					} catch (ClassNotFoundException e) {
+						System.out.println("\nERROR: Unrecognized message");
+					} 
+						
+					// If there is 0 active chatbox
+					if (chatBoxes.size() == 0) { 
+						System.out.println("\nThere is no active chatbox.");
+						chatBoxes.add(new ChatBoxGUI(Client.this, account.getUsername(), receivedMessage.getUsername(), friendIP, output));
+					}
+					
+					// Search for chat box with the friend
+					for(ChatBoxGUI box: chatBoxes) {
+						if (box.getFriendName().equals(receivedMessage.getUsername())) {
+							alreadyChatting = true;
+							System.out.println("\nFound your friend!");
+							publish(new BoxMessage(box, receivedMessage.getMessage()));
+						}
+					}
+					
+					// If chat box with a friend is not exist
+					if(!alreadyChatting) {
+						System.out.println("\nYou have not chatted with this person yet.");
+						ChatBoxGUI chatbox = new ChatBoxGUI(Client.this, account.getUsername(), receivedMessage.getUsername(), friendIP, output);
+						chatBoxes.add(chatbox);
+						publish(new BoxMessage(chatbox, receivedMessage.getMessage()));					
+					}
+					
+					System.out.println("\nMessage sent from: " + receivedMessage.getUsername());
+				}
+			}
+
+			@Override
+			protected void process(List<BoxMessage> chunks) {
+				chunks.get(0).getChatbox().displayMessage(chunks.get(0).getMessage());
+				chunks.clear();
+			}
+			
+		};
+		
+		swingWorker.execute();
+	}
+	
+	@Override
+	public void onChatBoxClose(String friendName) {
+		chatBoxes.removeIf(x -> (x.getFriendName().equals(friendName)));
+		System.out.println("\nConversation with " + friendName + " closed.");
+		System.out.println("\nNumber of active chatboxes: " + chatBoxes.size());	
+	}
+	
+	@Override
+	public void onFriendListCLose() {
+		// Close all chat boxes
+		for (ChatBoxGUI box: chatBoxes) {
+			box.dispose();
+		}
+		
+		chatBoxes.clear();
+		
+		closeAll();
+		
+		System.out.println("\n" + account.getUsername() + " logged out.");
+		
+		// Go back to login frame
+		new LoginGUI(this);
+	}
+
+	@Override
+	public void onRefreshClick() {
+		friendListManager.requestFriendList();
+	}
+	
+	@Override
+	public void onAddFriendClick(String friendName) {
+		if (!isFriend(friendName)) friendListManager.requestFriendAddition();
+	}
+
+	private boolean isFriend(String friendName) {
+		friendStatuses.stream().filter(x -> x.getFriendName().equals(friendName)).findFirst().isPresent()
+	}
+	
+	@Override
+	public void onFriendsReceive(ArrayList<FriendStatus> friendStatuses) {
+		System.out.println("\nFriends received.");
+		this.friendStatuses = friendStatuses;
+		if (friendListGUI != null) friendListGUI.displayFriends(friendStatuses);
+	}
+	
+	// Close i/o streams and socket
+	private void closeAll() {
+		 try {
+			 output.close();
+			 input.close();
+			 connection.close();
+			 System.out.println("\nTerminated connection with server.");
+		 } catch (IOException ioException) {
+			 ioException.printStackTrace();
+		 }
+	}
+	
+	/*private void startChatting() {
+		try {
+			System.out.println("\nStart chatting.");
+			whileChatting();
+		} catch (IOException ioException) {
+			ioException.printStackTrace();
+		} finally {
+			closeAll();
+		}
+	}*/
+}
